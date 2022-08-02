@@ -141,10 +141,7 @@ class HiveNuclei:
             print("Hive project id is not set! Please set Hive project id!")
             exit(1)
         else:
-            if project_id is not None:
-                self.project_id = project_id
-            else:
-                self.project_id = config.project_id
+            self.project_id = project_id if project_id is not None else config.project_id
         if config.server is None and server is None:
             print("Hive server url is not set! Please set Hive server url!")
             exit(2)
@@ -175,42 +172,39 @@ class HiveNuclei:
                     type='http', host=None, ip=None, address='server.ispa.cnr.it', scheme='http', port=80,
                     matched='http://server.ispa.cnr.it/', extracted_results=['Apache/2.4.7 (Ubuntu)'])]
         """
-        for index in range(len(data_list)):
-            matched: str = data_list[index].matched
-            extracted_search = search(
+        for data in data_list:
+            matched: str = data.matched
+            if extracted_search := search(
                 r"^(?P<matched>.*) \[(?P<extracted>.*)\]$", matched
-            )
-            if extracted_search:
-                data_list[index].matched = str(extracted_search.group("matched"))
-                data_list[index].extracted_results = [
-                    str(extracted_search.group("extracted"))
-                ]
-                matched: str = data_list[index].matched
+            ):
+                data.matched = str(extracted_search.group("matched"))
+                data.extracted_results = [str(extracted_search.group("extracted"))]
+
+                matched: str = data.matched
             urlparse_result: ParseResult = urlparse(matched)
             if urlparse_result.hostname is not None:
-                data_list[index].scheme = urlparse_result.scheme
-                data_list[index].address = urlparse_result.hostname
+                data.scheme = urlparse_result.scheme
+                data.address = urlparse_result.hostname
                 if urlparse_result.port is None:
-                    if urlparse_result.scheme == "http":
-                        data_list[index].port = 80
+                    if urlparse_result.scheme == "ftp":
+                        data.port = 21
+                    elif urlparse_result.scheme == "http":
+                        data.port = 80
                     elif urlparse_result.scheme == "https":
-                        data_list[index].port = 443
-                    elif urlparse_result.scheme == "ftp":
-                        data_list[index].port = 21
+                        data.port = 443
                 else:
-                    data_list[index].port = urlparse_result.port
+                    data.port = urlparse_result.port
             else:
-                data_list[index].scheme = data_list[index].type
+                data.scheme = data.type
                 matched_regex = (
                     r"^(?P<address>[0-9a-zA-Z.-_:]{3,64}):"
                     r"(?P<port>[0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
                 )
-                matched_search = search(matched_regex, matched)
-                if matched_search:
-                    data_list[index].address = str(matched_search.group("address"))
-                    data_list[index].port = int(matched_search.group("port"))
-            if isinstance(data_list[index].ip, IPv4Address):
-                data_list[index].address = str(data_list[index].ip)
+                if matched_search := search(matched_regex, matched):
+                    data.address = str(matched_search.group("address"))
+                    data.port = int(matched_search.group("port"))
+            if isinstance(data.ip, IPv4Address):
+                data.address = str(data.ip)
         return data_list
 
     def _parse_nuclei_console_output(self, lines: str) -> List[NucleiData]:
@@ -223,7 +217,7 @@ class HiveNuclei:
                     type='http', host=None, ip=None, address='server.ispa.cnr.it', scheme='http', port=80,
                     matched='http://server.ispa.cnr.it/', extracted_results=['Apache/2.4.7 (Ubuntu)'])]
         """
-        results: List[NucleiData] = list()
+        results: List[NucleiData] = []
         ansi_escape = compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
         ansi_escaped_lines = ansi_escape.sub("", lines)
         nuclei_output_regex = (
@@ -234,16 +228,17 @@ class HiveNuclei:
             r"(?P<matched>.*)$"
         )
         matches = finditer(nuclei_output_regex, ansi_escaped_lines, MULTILINE)
-        for match in matches:
-            results.append(
-                NucleiData(
-                    date=datetime.strptime(match.group("date"), "%Y-%m-%d %H:%M:%S"),
-                    template_id=str(match.group("template_id")),
-                    type=str(match.group("type")),
-                    severity=str(match.group("severity")),
-                    matched=str(match.group("matched")),
-                )
+        results.extend(
+            NucleiData(
+                date=datetime.strptime(match.group("date"), "%Y-%m-%d %H:%M:%S"),
+                template_id=str(match.group("template_id")),
+                type=str(match.group("type")),
+                severity=str(match.group("severity")),
+                matched=str(match.group("matched")),
             )
+            for match in matches
+        )
+
         return self._parse_nuclei_matched(data_list=results)
 
     def _parse_nuclei_json_output(self, lines: str) -> List[NucleiData]:
@@ -266,7 +261,7 @@ class HiveNuclei:
                     address='150.145.88.94', scheme='http', port=80, matched='http://server.ispa.cnr.it/',
                     extracted_results=['Apache/2.4.7 (Ubuntu)'])]
         """
-        results: List[NucleiData] = list()
+        results: List[NucleiData] = []
         for line in lines.split("\n"):
             try:
                 nuclei_data_dict: Dict = loads(line)
@@ -274,8 +269,6 @@ class HiveNuclei:
                     nuclei_data_dict
                 )
                 results.append(nuclei_data)
-            except JSONDecodeError:
-                continue
             except ValidationError:
                 continue
         return self._parse_nuclei_matched(data_list=results)
@@ -313,7 +306,7 @@ class HiveNuclei:
                           tags=[HiveLibrary.Tag(id=None, uuid=None, name='test_host_tag', parent_id=None,
                                                 base_node_id=None, labels=[], parent_labels=[])])]
         """
-        hive_hosts: List[HiveLibrary.Host] = list()
+        hive_hosts: List[HiveLibrary.Host] = []
         for data in data_list:
             try:
                 # Make empty Hive host and port
@@ -356,13 +349,12 @@ class HiveNuclei:
 
                     # Try to resolve host name by address
                     try:
-                        if self.resolve:
-                            if len(host.names) == 0:
-                                host.names = [
-                                    HiveLibrary.Host.Name(
-                                        hostname=gethostbyaddr(str(host_address))[0]
-                                    )
-                                ]
+                        if self.resolve and len(host.names) == 0:
+                            host.names = [
+                                HiveLibrary.Host.Name(
+                                    hostname=gethostbyaddr(str(host_address))[0]
+                                )
+                            ]
                     except herror:
                         pass
 
@@ -380,9 +372,10 @@ class HiveNuclei:
                         name=record_name,
                         tool_name="nuclei",
                         record_type=RecordTypes.NESTED.value,
-                        value=list(),
+                        value=[],
                     )
                 ]
+
                 # Make record value
                 for key in [
                     "address",

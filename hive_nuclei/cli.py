@@ -34,9 +34,8 @@ def print_hive_hosts(hosts: List[HiveLibrary.Host]) -> None:
         record_name: Optional[str] = None
         if host.ip is not None:
             host_address = str(host.ip)
-        else:
-            if len(host.names) == 1:
-                host_address = host.names[0].hostname
+        elif len(host.names) == 1:
+            host_address = host.names[0].hostname
         if len(host.records) == 1:
             record_name = host.records[0].name
         elif len(host.ports) == 1:
