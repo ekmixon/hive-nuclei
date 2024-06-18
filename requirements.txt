@@ -1,3 +1,4 @@
 marshmallow>=3.12.1
 colorama>=0.4.4
 hive-library>=0.0.1b1
+urllib3>=2.2.2 # not directly required, pinned by Snyk to avoid a vulnerability
